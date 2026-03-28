@@ -1,0 +1,91 @@
+# RIVA Configuration
+# ==================
+
+# Paths (update these to your local setup)
+paths:
+  bam: "/path/to/HG002.bam"
+  reference: "/path/to/GRCh38.fa"
+  candidate_vcf: "/path/to/bcftools_candidates.vcf.gz"
+  truth_vcf: "/path/to/HG002_GRCh38_GIAB_v4.2.1_benchmark.vcf.gz"
+  truth_bed: "/path/to/HG002_GRCh38_GIAB_v4.2.1_benchmark.bed"
+  output_dir: "/path/to/riva_output"
+  rtg_sdf: "/path/to/GRCh38.sdf"
+
+# Data splitting (chromosome-based)
+splits:
+  train: ["chr1","chr2","chr3","chr4","chr5","chr6","chr7","chr8","chr9","chr10","chr11","chr12","chr13","chr14","chr15","chr16","chr17","chr18"]
+  val: ["chr19"]
+  test: ["chr20"]
+
+# Feature extraction
+extraction:
+  max_reads_per_locus: 150       # Pad/truncate to this
+  cigar_window: 2                # ±bp for CIGAR indel matching
+  nbq_window: 5                  # ±bp for neighbourhood base quality
+  mismatch_window: 10            # ±bp for local mismatch count
+  min_mapq: 0                    # Include all reads (let model learn)
+  workers: 8                     # Parallel workers (one per chromosome group)
+  output_format: "hdf5"          # hdf5 for variable-length read sets
+
+# Per-read features (d ≈ 18)
+features:
+  per_read:
+    - mapping_quality             # MAPQ
+    - mean_base_quality           # Mean BQ across read
+    - nbq                         # Neighbourhood BQ ±5bp of variant
+    - bq_at_variant               # BQ at variant position
+    - strand                      # 0=forward, 1=reverse
+    - proper_pair                 # 0/1
+    - nm_edit_distance            # NM tag
+    - softclip_fraction           # Fraction of read soft-clipped
+    - read_end_distance           # Distance from variant to nearest read end
+    - insert_size                 # TLEN
+    - has_indel_cigar             # 0/1: read has I/D near variant
+    - cigar_indel_length          # Length of CIGAR indel (0 if none)
+    - cigar_matches_candidate     # 0/1: CIGAR indel ≈ candidate allele
+    - local_mismatch_count        # Mismatches in ±10bp window
+    - mate_has_indel              # 0/1: mate carries indel CIGAR
+    - is_duplicate                # 0/1: read is marked duplicate
+    - is_secondary                # 0/1: secondary alignment
+    - alignment_score             # AS tag if available
+
+  locus_context:
+    - homopolymer_length          # Homopolymer run at variant position
+    - gc_content_50bp             # GC in ±50bp window
+    - tandem_repeat_unit          # TR unit length
+    - tandem_repeat_length        # TR tract length
+    - indel_length                # Candidate indel length (0 for rescue)
+    - is_insertion                # 0/1
+    - ref_entropy                 # Shannon entropy of ref ±10bp
+    - total_depth                 # Number of overlapping reads
+
+# Model architecture
+model:
+  hidden_dim: 64                 # h (use 128 for full paper)
+  num_latents: 4                 # K (use 6-8 for full paper)
+  num_heads: 4                   # Attention heads
+  num_cross_attn_layers: 1       # T (ablate 1 vs 2 for full paper)
+  ffn_dim_multiplier: 2          # FFN hidden = 2h
+  dropout: 0.1
+  latent_init: "random"          # "random" or "domain" (full paper)
+
+# Training
+training:
+  batch_size: 256                # Loci per batch
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  max_epochs: 200
+  early_stopping_patience: 20
+  gradient_clip_norm: 1.0
+  scheduler: "cosine"            # Cosine annealing
+  min_lr: 0.00001
+  focal_loss_gamma: 2.0          # For rescue mode
+  loss_weights:
+    refinement: 1.0
+    rescue: 1.0
+    auxiliary: 0.5
+
+# Evaluation
+evaluation:
+  calibration_bins: 15
+  f1_threshold_search_steps: 200
